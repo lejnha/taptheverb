@@ -865,6 +865,28 @@ document.addEventListener("dragover",e=>{
 });
 document.addEventListener("dragend",()=>clearInterval(autoScrollTimer));
 document.addEventListener("drop",()=>clearInterval(autoScrollTimer));
+
+// ── 전역 등록 (HTML 속성에서 호출용) ──
+if(typeof chipDrag!=="undefined") window.chipDrag=chipDrag;
+if(typeof uncheckItem!=="undefined") window.uncheckItem=uncheckItem;
+if(typeof pickQ!=="undefined") window.pickQ=pickQ;
+if(typeof dropAlways!=="undefined") window.dropAlways=dropAlways;
+if(typeof addAlways!=="undefined") window.addAlways=addAlways;
+if(typeof removeAlways!=="undefined") window.removeAlways=removeAlways;
+if(typeof toggleDrawer!=="undefined") window.toggleDrawer=toggleDrawer;
+if(typeof resetDay!=="undefined") window.resetDay=resetDay;
+if(typeof scrollToNow!=="undefined") window.scrollToNow=scrollToNow;
+if(typeof setPlan!=="undefined") window.setPlan=setPlan;
+if(typeof clrPlan!=="undefined") window.clrPlan=clrPlan;
+if(typeof clrPlanSilent!=="undefined") window.clrPlanSilent=clrPlanSilent;
+if(typeof setCat!=="undefined") window.setCat=setCat;
+if(typeof quickAdd!=="undefined") window.quickAdd=quickAdd;
+if(typeof buildTable!=="undefined") window.buildTable=buildTable;
+if(typeof renderChips!=="undefined") window.renderChips=renderChips;
+if(typeof sched!=="undefined") window.sched=sched;
+if(typeof init!=="undefined") window.init=init;
+if(typeof toggleHeat!=="undefined") window.toggleHeat=toggleHeat;
+if(typeof setTemp!=="undefined") window.setTemp=setTemp;
 </script>
 </body>
 </html>
