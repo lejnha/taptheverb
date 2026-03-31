@@ -286,7 +286,12 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:var(--bg);
 /* ══════════════ SUPABASE ══════════════ */
 const SB_URL="https://aqcdfnhzbrwqshyqvixb.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxY2Rmbmh6YnJ3cXNoeXF2aXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjkwNjcsImV4cCI6MjA4OTMwNTA2N30.-v4_czoeiinthnnqbFKj37ajE8lIJfiwkn-F220RxhE";
-const sb=supabase.createClient(SB_URL,SB_KEY);
+const sb=supabase.createClient(SB_URL,SB_KEY,{
+  auth:{
+    detectSessionInUrl:true,
+    flowType:'implicit'
+  }
+});
 
 /* ══════════════ 인증 ══════════════ */
 let currentUser=null;
