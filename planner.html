@@ -668,6 +668,12 @@ async function uncheckItem(id,tok){
   setDot("saved");
 }
 
+function chipDrag(e,tok){
+  e.dataTransfer.setData("text/plain",tok);
+  selChip=tok;
+}
+
+
 /* ══ 시간표 빌드 ══
    각 시간: 1행 (plan 4칸) + 1행 (actual 4칸)
    [시간] [p:00][p:15][p:30][p:45] | [a:00][a:15][a:30][a:45]
