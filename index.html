@@ -228,7 +228,7 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:var(--bg);
     <div class="navbar">
       <span class="nav-logo">TapTheVerb</span>
       <a href="planner.html" class="nav-planner">📋 BxB 플래너</a>
-      <div id="navAvatar" class="nav-avatar-placeholder" onclick="toggleMenu()">?</div>
+      <div id="avatarWrap"><div class="nav-avatar-placeholder" onclick="toggleMenu()">?</div></div>
     </div>
 
     <!-- 입력 -->
@@ -289,7 +289,8 @@ const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const sb=supabase.createClient(SB_URL,SB_KEY,{
   auth:{
     detectSessionInUrl:true,
-    flowType:'implicit'
+    persistSession:true,
+    storageKey:'taptheverb-auth'
   }
 });
 
@@ -316,13 +317,19 @@ function toggleMenu(){
   document.getElementById('userMenu').classList.toggle('open');
 }
 
-// 세션 체크
+// 세션 체크 — 중복 방지
+let _initialized=false;
 sb.auth.onAuthStateChange(async(event,session)=>{
   if(session?.user){
     currentUser=session.user;
     showApp(session.user);
-    await loadFromDB();
-  } else {
+    if(!_initialized){
+      _initialized=true;
+      await loadFromDB();
+    }
+  } else if(event==='SIGNED_OUT'){
+    _initialized=false;
+    currentUser=null;
     document.getElementById('login-screen').style.display='flex';
     document.getElementById('app-screen').style.display='none';
   }
@@ -331,21 +338,25 @@ sb.auth.onAuthStateChange(async(event,session)=>{
 function showApp(user){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
-  // 아바타
-  const avatar=document.getElementById('navAvatar');
+  // 아바타 — outerHTML 대신 innerHTML 방식으로 안전하게
   const name=user.user_metadata?.full_name||user.email||'User';
   const pic=user.user_metadata?.avatar_url;
-  if(pic){
-    avatar.outerHTML=`<div class="nav-avatar" onclick="toggleMenu()"><img src="${pic}" alt="${name}"></div>`;
-  } else {
-    avatar.textContent=name.charAt(0).toUpperCase();
+  const avatarWrap=document.getElementById('avatarWrap');
+  if(avatarWrap){
+    if(pic){
+      avatarWrap.innerHTML=`<img src="${pic}" alt="${name}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;cursor:pointer;border:0.5px solid var(--border2)" onclick="toggleMenu()">`;
+    } else {
+      avatarWrap.innerHTML=`<div class="nav-avatar-placeholder" onclick="toggleMenu()">${name.charAt(0).toUpperCase()}</div>`;
+    }
   }
-  document.getElementById('menuName').textContent=name;
-  document.getElementById('menuEmail').textContent=user.email||'';
+  const mn=document.getElementById('menuName');
+  const me=document.getElementById('menuEmail');
+  if(mn)mn.textContent=name;
+  if(me)me.textContent=user.email||'';
 }
 
 document.addEventListener('click',e=>{
-  if(!e.target.closest('#userMenu')&&!e.target.closest('#navAvatar')&&!e.target.closest('.nav-avatar'))
+  if(!e.target.closest('#userMenu')&&!e.target.closest('#avatarWrap'))
     document.getElementById('userMenu').classList.remove('open');
 });
 
