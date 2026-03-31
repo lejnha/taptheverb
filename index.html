@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenNote</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#fafaf9;--bg2:#f3f2f0;--bg3:#eceae6;
+  --surface:#fff;--border:rgba(0,0,0,.1);--border2:rgba(0,0,0,.18);
+  --text:#1a1917;--text2:#6b6760;--text3:#9d9a94;
+  --radius:10px;--radius-sm:6px;
+  --c-todo-bg:#E6F1FB;--c-todo:#185FA5;
+  --c-sched-bg:#EAF3DE;--c-sched:#3B6D11;
+  --c-buy-bg:#FAECE7;--c-buy:#993C1D;
+  --c-ref-bg:#FAEEDA;--c-ref:#854F0B;
+  --c-think-bg:#F1EFE8;--c-think:#5F5E5A;
+  --c-check-bg:#EEEDFE;--c-check:#3C3489;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#18181b;--bg2:#1f1f23;--bg3:#27272b;
+  --surface:#1f1f23;--border:rgba(255,255,255,.1);--border2:rgba(255,255,255,.2);
+  --text:#f4f4f5;--text2:#a1a1aa;--text3:#71717a;
+}}
+body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:var(--bg);color:var(--text);min-height:100dvh}
+.shell{max-width:680px;margin:0 auto;padding:2rem 1.25rem 4rem}
+.header{margin-bottom:2rem}
+.header h1{font-size:22px;font-weight:600;letter-spacing:-.03em;margin-bottom:3px}
+.header p{font-size:13px;color:var(--text3)}
+
+/* 입력 */
+.input-wrap{position:relative;margin-bottom:5px}
+.main-input{width:100%;font-size:16px;font-weight:500;padding:13px 16px;border:0.5px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);outline:none;transition:border-color .15s}
+.main-input:focus{border-color:var(--text3)}
+.main-input::placeholder{color:var(--text3);font-weight:400;font-size:14px}
+.hint{font-size:11px;color:var(--text3);margin-bottom:10px;padding-left:2px;line-height:1.8}
+.hint b{color:var(--text2);font-weight:500}
+
+/* 드롭다운 (공통) */
+.dd-wrap{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:200;background:var(--surface);border:0.5px solid var(--border2);border-radius:var(--radius);overflow:hidden;display:none;box-shadow:0 6px 24px rgba(0,0,0,.09)}
+.dd-wrap.open{display:block}
+.dd-section{padding:5px 14px 3px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;background:var(--bg2);border-bottom:0.5px solid var(--border)}
+.dd-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:0.5px solid var(--border);transition:background .08s}
+.dd-item:last-child{border-bottom:none}
+.dd-item:hover,.dd-item.focused{background:var(--bg2)}
+.dd-name{font-weight:500;min-width:72px}
+.dd-aliases{font-size:11px;color:var(--text3);flex:1}
+.dd-tab{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text3);border:0.5px solid var(--border)}
+
+/* 유사 항목 */
+.similar-wrap{overflow:hidden;max-height:0;transition:max-height .2s ease}
+.similar-wrap.open{max-height:100px;margin-bottom:8px}
+.similar-inner{padding:9px 13px;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-sm)}
+.sim-label{font-size:10px;color:var(--text3);margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.04em}
+.sim-chips{display:flex;flex-wrap:wrap;gap:5px}
+.sim-chip{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--surface);border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;transition:all .1s}
+.sim-chip:hover{background:var(--bg3);color:var(--text)}
+.sim-chip.dup{border-color:var(--c-buy);color:var(--c-buy)}
+
+/* 미리보기 */
+.preview-row{display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:6px;background:var(--bg2);border-radius:var(--radius-sm);border:0.5px solid var(--border);min-height:44px}
+.preview-token{font-size:15px;font-weight:500;flex:1}
+.preview-token.empty{color:var(--text3);font-weight:400;font-size:13px}
+
+/* pill */
+.pill{font-size:12px;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap;display:inline-block}
+.pill-todo {background:var(--c-todo-bg);color:var(--c-todo)}
+.pill-sched{background:var(--c-sched-bg);color:var(--c-sched)}
+.pill-buy  {background:var(--c-buy-bg);color:var(--c-buy)}
+.pill-ref  {background:var(--c-ref-bg);color:var(--c-ref)}
+.pill-think{background:var(--c-think-bg);color:var(--c-think)}
+.pill-check{background:var(--c-check-bg);color:var(--c-check)}
+
+/* 버튼 */
+.add-btn{width:100%;padding:11px;border-radius:var(--radius-sm);background:var(--surface);border:0.5px solid var(--border2);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;transition:background .12s;margin-bottom:1.5rem}
+.add-btn:hover:not(:disabled){background:var(--bg2)}
+.add-btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* 참조 패널 */
+.ref-panel{margin-bottom:1.5rem}
+.ref-block{margin-bottom:14px}
+.ref-block-label{font-size:10px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.ref-group{margin-bottom:8px}
+.ref-group-name{font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.v-chip{font-size:12px;padding:4px 11px;border-radius:20px;cursor:pointer;border:0.5px solid var(--border);background:var(--surface);color:var(--text2);transition:all .1s}
+.v-chip:hover{border-color:var(--border2);background:var(--bg2);color:var(--text)}
+.v-chip .al{font-size:10px;opacity:.5;margin-left:3px}
+
+/* 목록 */
+.list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.list-title{font-size:13px;font-weight:500;color:var(--text2)}
+.filter-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+.f-btn{font-size:11px;padding:3px 10px;border-radius:20px;border:0.5px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;transition:all .1s}
+.f-btn.active{background:var(--bg3);border-color:var(--border2);color:var(--text);font-weight:500}
+.filter-group-label{font-size:10px;color:var(--text3);margin:6px 0 4px;letter-spacing:.04em;text-transform:uppercase;width:100%}
+.token-list{display:flex;flex-direction:column;gap:5px}
+
+/* 토큰 행 */
+.t-row{display:flex;align-items:center;gap:8px;padding:9px 13px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);transition:background .1s}
+.t-row:hover{background:var(--bg2)}
+.t-row.is-checked{border-left:3px solid var(--c-check);padding-left:10px;background:var(--c-check-bg)}
+.t-check{width:16px;height:16px;cursor:pointer;accent-color:var(--c-check);flex-shrink:0}
+.t-tok{font-size:14px;font-weight:500;flex:1;cursor:pointer;border-radius:3px;padding:1px 3px;margin:-1px -3px}
+.t-tok:hover{background:var(--bg3)}
+.t-checked-tok{font-size:14px;font-weight:500;flex:1;color:var(--c-check)}
+.t-pill-btn{background:none;border:none;cursor:pointer;padding:0;position:relative}
+.t-del{background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;opacity:.4;padding:0 2px;flex-shrink:0}
+.t-del:hover{opacity:1}
+
+/* 인라인 수정 */
+.t-row.editing{flex-direction:column;align-items:stretch;gap:7px;padding:10px 13px}
+.edit-input-wrap{position:relative}
+.edit-input{width:100%;font-size:14px;font-weight:500;padding:7px 10px;border:0.5px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);outline:none}
+.edit-input:focus{border-color:var(--text3)}
+.edit-hint{font-size:10px;color:var(--text3);margin-top:3px}
+/* 수정창 드롭다운은 dd-wrap 재사용 */
+.edit-actions{display:flex;gap:6px}
+.edit-save{flex:1;padding:6px;font-size:12px;font-weight:500;border-radius:var(--radius-sm);background:var(--text);color:var(--bg);border:none;cursor:pointer}
+.edit-cancel{flex:1;padding:6px;font-size:12px;border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);border:0.5px solid var(--border);cursor:pointer}
+
+/* 카테고리 팝업 */
+.cat-popup{position:absolute;top:calc(100% + 4px);right:0;z-index:400;background:var(--surface);border:0.5px solid var(--border2);border-radius:var(--radius-sm);overflow:hidden;display:none;box-shadow:0 4px 16px rgba(0,0,0,.09);min-width:110px}
+.cat-popup.open{display:block}
+.cat-popup-item{padding:7px 13px;cursor:pointer;border-bottom:0.5px solid var(--border);transition:background .08s}
+.cat-popup-item:last-child{border-bottom:none}
+.cat-popup-item:hover{background:var(--bg2)}
+
+.status-bar{font-size:11px;color:var(--text3);text-align:right;margin-bottom:6px;min-height:16px}
+.status-bar.err{color:var(--c-buy)}
+.empty{text-align:center;padding:28px;font-size:13px;color:var(--text3)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <h1>TokenNote</h1>
+    <p>명사`동사`카테고리 → Enter</p>
+    <a href="planner.html" style="display:inline-block;margin-top:10px;font-size:12px;padding:5px 14px;border-radius:20px;border:0.5px solid var(--border2);background:var(--surface);color:var(--text2);text-decoration:none;transition:background .1s" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--surface)'">📋 BxB 플래너 →</a>
+</div>
+
+  <div class="input-wrap">
+    <input class="main-input" id="mainInput"
+      placeholder="과제`하기`할일  →  Enter"
+      autocomplete="off" spellcheck="false"/>
+    <div class="dd-wrap" id="mainDd"></div>
+  </div>
+  <div class="hint">
+    <b>`</b> 입력 → 동사 자동완성 &nbsp;·&nbsp; 동사 선택 후 다시 <b>`</b> → 카테고리 자동완성 &nbsp;·&nbsp; <b>Tab / ↑↓</b> 선택 &nbsp;·&nbsp; <b>Enter</b> 추가
+  </div>
+
+  <div class="similar-wrap" id="simWrap">
+    <div class="similar-inner">
+      <span class="sim-label">이미 있는 항목</span>
+      <div class="sim-chips" id="simChips"></div>
+    </div>
+  </div>
+
+  <div class="preview-row" id="previewRow">
+    <span class="preview-token empty" id="previewToken">명사 ` 동사 입력 후 미리보기</span>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+  <button class="add-btn" id="addBtn" disabled onclick="commitAdd()">추가  (Enter)</button>
+
+  <div class="ref-panel">
+    <div class="ref-block">
+      <div class="ref-block-label">동사 참조</div>
+      <div id="verbRefGroups"></div>
+    </div>
+    <div class="ref-block">
+      <div class="ref-block-label">카테고리 참조</div>
+      <div class="chips" id="catChips"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="list-header">
+      <span class="list-title">저장 항목 <span id="cnt">0</span> &nbsp;·&nbsp; ⊙ 체크 <span id="checkCnt" style="color:var(--c-check);font-weight:600">0</span></span>
+    </div>
+    <div id="filterArea"></div>
+    <div class="token-list" id="tokenList"><div class="empty">아직 항목이 없습니다</div></div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════
+   데이터 정의
+═══════════════════════════════════════ */
+const VERB_GROUPS = [
+  { group:"행동·실행", verbs:[
+    {name:"하기",       aliases:["하","처리","신청","납부","등록","발급","완료"],       desc:"실행 가능한 모든 행위"},
+    {name:"안하기",     aliases:["안","제외","스킵","보류","미루기"],                  desc:"하지 않기로 결정"},
+    {name:"만들기",     aliases:["만","작성","제작","기획","개발","쓰기","촬영"],      desc:"작성·제작·개발"},
+    {name:"정리하기",   aliases:["정","청소","분류","정돈","치우기"],                  desc:"청소·분류·정돈"},
+    {name:"해결하기",   aliases:["해","fix","수정","고치기"],                          desc:"문제 해결·수정"},
+    {name:"관리하기",   aliases:["관","운영","유지","담당","케어"],                    desc:"운영·유지·관리"},
+    {name:"사용하기",   aliases:["사용","활용","이용"],                                desc:"사용·활용"},
+    {name:"업데이트하기",aliases:["업","갱신","변경","최신화"],                        desc:"갱신·변경·최신화"},
+    {name:"예약하기",   aliases:["예","부킹","잡기"],                                  desc:"예약·부킹"},
+  ]},
+  { group:"이동·소통", verbs:[
+    {name:"가기",       aliases:["가","방문","이동","여행","출장","외출"],             desc:"방문·이동·여행"},
+    {name:"만나기",     aliases:["만나","미팅","약속","모임"],                         desc:"약속·미팅·모임"},
+    {name:"연락하기",   aliases:["연","통화","문자","카톡","이메일","전화"],           desc:"통화·문자·연락"},
+    {name:"주기",       aliases:["주","전달","보내기","제출","납품"],                  desc:"전달·제출·납품"},
+    {name:"받기",       aliases:["받","수령","수취","픽업","가져오기"],                desc:"수령·수취·픽업"},
+  ]},
+  { group:"소비·획득", verbs:[
+    {name:"사기",       aliases:["사","구매","구입","결제","주문","예매","렌탈"],      desc:"구입·결제·주문"},
+    {name:"먹기",       aliases:["먹","마시기","식사","배달"],                         desc:"식사·음식·배달"},
+  ]},
+  { group:"인풋·확인", verbs:[
+    {name:"배우기",     aliases:["배","읽기","공부","학습","강의","수강"],             desc:"읽기·공부·학습"},
+    {name:"보기",       aliases:["보","관람","시청","감상"],                           desc:"관람·시청·감상"},
+    {name:"확인하기",   aliases:["확","체크","검토","점검","살피기"],                  desc:"체크·검토·점검"},
+    {name:"검색하기",   aliases:["검","찾기","서치","조사","리서치"],                  desc:"찾기·조사·서치"},
+    {name:"생각하기",   aliases:["생","아이디어","메모","고민","계획","기록","일기"],  desc:"아이디어·메모·고민"},
+  ]},
+];
+
+const CATS = [
+  {name:"할일",  key:"todo",  cls:"pill-todo",  desc:"실행해야 할 모든 것"},
+  {name:"일정",  key:"sched", cls:"pill-sched", desc:"날짜·시간이 확정된 것"},
+  {name:"구매",  key:"buy",   cls:"pill-buy",   desc:"사야 할 것"},
+  {name:"자료",  key:"ref",   cls:"pill-ref",   desc:"참고·저장할 것"},
+  {name:"생각",  key:"think", cls:"pill-think", desc:"아이디어·메모·고민"},
+];
+
+const VERB_DEFAULT_CAT = {
+  "하기":"todo","안하기":"todo","만들기":"todo","정리하기":"todo","해결하기":"todo",
+  "관리하기":"todo","사용하기":"todo","업데이트하기":"todo","예약하기":"sched",
+  "가기":"sched","만나기":"sched","연락하기":"todo","주기":"todo","받기":"todo",
+  "사기":"buy","먹기":"todo","배우기":"ref","보기":"ref",
+  "확인하기":"todo","검색하기":"ref","생각하기":"think"
+};
+
+/* ═══════════════════════════════════════
+   Supabase
+═══════════════════════════════════════ */
+const SB_URL = "https://aqcdfnhzbrwqshyqvixb.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxY2Rmbmh6YnJ3cXNoeXF2aXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjkwNjcsImV4cCI6MjA4OTMwNTA2N30.-v4_czoeiinthnnqbFKj37ajE8lIJfiwkn-F220RxhE";
+let sb = null;
+(function(){
+  try{
+    sb = supabase.createClient(SB_URL, SB_KEY);
+    setStatus("DB 연결됨 — 로드 중...");
+    loadFromDB();
+  }catch(e){ setStatus("연결 실패: "+e.message, true); }
+})();
+
+async function loadFromDB(){
+  if(!sb) return;
+  const {data,error} = await sb.from("items").select("*").order("created_at",{ascending:false});
+  if(error){ setStatus("로드 실패: "+error.message, true); return; }
+  tokens = data.map(row=>({
+    id: String(row.id), dbId: String(row.id),
+    noun: row.noun, verb: row.verb, token: row.token,
+    cat: CATS.find(c=>c.key===row.category_key)||CATS[0],
+    checked: row.checked||false,
+  }));
+  setStatus(tokens.length+"개 로드됨");
+  renderList();
+}
+async function saveToDB(item){
+  if(!sb) return null;
+  const {data,error} = await sb.from("items").insert({
+    noun:item.noun, verb:item.verb, token:item.token,
+    category:item.cat.name, category_key:item.cat.key, checked:false,
+  }).select().single();
+  if(error){ setStatus("저장 실패: "+error.message, true); return null; }
+  return String(data.id);
+}
+async function updateInDB(dbId,fields){
+  if(!sb||!dbId) return;
+  const {error} = await sb.from("items").update(fields).eq("id",dbId);
+  if(error) setStatus("수정 실패: "+error.message, true);
+}
+async function deleteFromDB(dbId){
+  if(!sb||!dbId) return;
+  await sb.from("items").delete().eq("id",dbId);
+}
+
+/* ═══════════════════════════════════════
+   상태
+═══════════════════════════════════════ */
+let tokens = [];
+let activeFilter = "전체";
+let activeVerbFilter = "전체";
+let editingId = null;
+let openCatPopupId = null;
+
+// 메인 입력 드롭다운 상태
+let mainDdItems=[], mainDdFocus=-1, mainDdMode="verb";
+// 수정 드롭다운 상태
+let editDdItems=[], editDdFocus=-1;
+
+function setStatus(msg,isErr=false){
+  const el=document.getElementById("statusBar");
+  el.textContent=msg; el.className="status-bar"+(isErr?" err":"");
+  if(!isErr) setTimeout(()=>{if(el.textContent===msg)el.textContent="";},3000);
+}
+
+/* ═══════════════════════════════════════
+   파싱  명사`동사`카테고리
+═══════════════════════════════════════ */
+function parse(raw){
+  const f=raw.indexOf("`");
+  if(f===-1) return {noun:raw.trim(),verbQ:"",catQ:"",mode:"noun"};
+  const s=raw.indexOf("`",f+1);
+  const noun=raw.slice(0,f).trim();
+  if(s===-1) return {noun,verbQ:raw.slice(f+1).trim(),catQ:"",mode:"verb"};
+  return {noun,verbQ:raw.slice(f+1,s).trim(),catQ:raw.slice(s+1).trim(),mode:"cat"};
+}
+
+const allVerbs=()=>VERB_GROUPS.flatMap(g=>g.verbs);
+function matchVerb(q){
+  if(!q) return allVerbs();
+  const lq=q.toLowerCase();
+  return allVerbs().filter(v=>v.name.startsWith(lq)||v.aliases.some(a=>a.startsWith(lq))||v.name.includes(lq));
+}
+function matchCat(q){
+  if(!q) return CATS;
+  const lq=q.toLowerCase();
+  return CATS.filter(c=>c.name.includes(lq)||c.key.includes(lq));
+}
+function resolveVerb(q){
+  if(!q) return null;
+  const exact=allVerbs().find(v=>v.name===q); if(exact) return exact;
+  const m=matchVerb(q); return m.length===1?m[0]:null;
+}
+function resolveCat(q){
+  if(!q) return null;
+  const exact=CATS.find(c=>c.name===q||c.key===q); if(exact) return exact;
+  const m=matchCat(q); return m.length===1?m[0]:null;
+}
+
+/* ═══════════════════════════════════════
+   드롭다운 공통 렌더
+═══════════════════════════════════════ */
+function renderDdItems(el, items, mode, pickFn){
+  if(!items.length){ el.classList.remove("open"); return; }
+  const label = mode==="verb"?"동사 선택":mode==="cat"?"카테고리 선택":"동사 선택";
+  el.innerHTML=`<div class="dd-section">${label}</div>`+
+    items.map((item,i)=>{
+      if(mode==="verb"||mode==="edit-verb")
+        return `<div class="dd-item" data-i="${i}" onmousedown="${pickFn}(${i})"><span class="dd-name">${item.name}</span><span class="dd-aliases">${item.aliases.slice(0,5).join(" · ")}</span><span class="dd-tab">Tab</span></div>`;
+      return `<div class="dd-item" data-i="${i}" onmousedown="${pickFn}(${i})"><span class="pill ${item.cls}" style="font-size:11px;padding:2px 8px;pointer-events:none">${item.name}</span><span class="dd-aliases">${item.desc}</span><span class="dd-tab">Tab</span></div>`;
+    }).join("");
+  el.classList.add("open");
+}
+function closeDd(el){ el.classList.remove("open"); }
+function focusDdEl(el, items, dir, focusIdx){
+  const newIdx=Math.max(0,Math.min(items.length-1,focusIdx+dir));
+  el.querySelectorAll(".dd-item").forEach((e,i)=>e.classList.toggle("focused",i===newIdx));
+  el.querySelectorAll(".dd-item")[newIdx]?.scrollIntoView({block:"nearest"});
+  return newIdx;
+}
+
+/* ═══════════════════════════════════════
+   메인 입력 드롭다운
+═══════════════════════════════════════ */
+function openMainDd(items,mode){
+  mainDdItems=items; mainDdFocus=-1; mainDdMode=mode;
+  renderDdItems(document.getElementById("mainDd"),items,mode,"pickMainDd");
+}
+function closeMainDd(){ closeDd(document.getElementById("mainDd")); mainDdItems=[]; mainDdFocus=-1; }
+function pickMainDd(i){
+  const inp=document.getElementById("mainInput"); const p=parse(inp.value);
+  if(mainDdMode==="verb") inp.value=p.noun+"`"+mainDdItems[i].name;
+  else inp.value=p.noun+"`"+p.verbQ+"`"+mainDdItems[i].name;
+  closeMainDd(); onInput(); inp.focus();
+}
+
+/* ═══════════════════════════════════════
+   수정창 드롭다운
+═══════════════════════════════════════ */
+function getEditDdEl(id){ return document.getElementById("editDd-"+id); }
+function openEditDd(id,items){
+  editDdItems=items; editDdFocus=-1;
+  const el=getEditDdEl(id); if(!el) return;
+  renderDdItems(el,items,"edit-verb","pickEditDd_"+id);
+}
+function closeEditDd(id){ const el=getEditDdEl(id); if(el) closeDd(el); editDdItems=[]; editDdFocus=-1; }
+
+/* 동적으로 pickEditDd 함수를 id별로 만드는 방식 대신 전역 함수 하나로 처리 */
+let _currentEditId = null;
+function pickEditDd(i){
+  const id=_currentEditId; if(!id) return;
+  const inp=document.getElementById("editInput-"+id); if(!inp) return;
+  // 수정창 형식: 명사`동사`카테고리 (메인과 동일)
+  const p=parseEdit(inp.value);
+  inp.value=p.noun+"`"+editDdItems[i].name+(p.catQ?"`"+p.catQ:"");
+  closeEditDd(id); editDdItems=[]; editDdFocus=-1;
+  inp.focus();
+}
+
+// 수정창 파싱: 메인과 동일하게 명사`동사`카테고리
+function parseEdit(raw){
+  return parse(raw);
+}
+
+/* ═══════════════════════════════════════
+   유사 항목
+═══════════════════════════════════════ */
+function updateSimilar(noun){
+  const wrap=document.getElementById("simWrap");
+  if(!noun||noun.length<1){ wrap.classList.remove("open"); return; }
+  const matches=tokens.filter(t=>
+    t.noun.includes(noun)||noun.includes(t.noun)||(noun.length>=2&&t.noun.includes(noun.slice(0,2)))
+  ).slice(0,6);
+  if(!matches.length){ wrap.classList.remove("open"); return; }
+  wrap.classList.add("open");
+  document.getElementById("simChips").innerHTML=matches.map(t=>{
+    const isDup=t.noun===noun;
+    return `<button class="sim-chip${isDup?" dup":""}"
+      onclick="loadSimilar('${t.noun.replace(/'/g,"\\'")}','${t.verb}')"
+      title="${t.token}">${t.token}${isDup?" ⚠":""}</button>`;
+  }).join("");
+}
+function loadSimilar(noun,verb){
+  const inp=document.getElementById("mainInput");
+  inp.value=noun+"`"+verb; closeMainDd(); onInput(); inp.focus();
+}
+
+/* ═══════════════════════════════════════
+   미리보기
+═══════════════════════════════════════ */
+function updatePreview(p){
+  const verbObj=resolveVerb(p.verbQ);
+  const pt=document.getElementById("previewToken");
+  const pr=document.getElementById("previewRow");
+  const btn=document.getElementById("addBtn");
+  pr.querySelectorAll(".pill").forEach(e=>e.remove());
+  if(!p.noun){ pt.textContent="명사 ` 동사 입력 후 미리보기"; pt.className="preview-token empty"; btn.disabled=true; return; }
+  if(!verbObj){ pt.textContent=p.noun+" ` ?"; pt.className="preview-token"; btn.disabled=true; return; }
+  const catObj=resolveCat(p.catQ)||CATS.find(c=>c.key===VERB_DEFAULT_CAT[verbObj.name]);
+  pt.textContent=verbObj.name+"-"+p.noun; pt.className="preview-token";
+  if(catObj){ const pill=document.createElement("span"); pill.className="pill "+catObj.cls; pill.textContent=catObj.name; pr.appendChild(pill); }
+  btn.disabled=false;
+}
+
+function onInput(){
+  const raw=document.getElementById("mainInput").value;
+  const p=parse(raw);
+  if(p.mode==="verb") openMainDd(matchVerb(p.verbQ),"verb");
+  else if(p.mode==="cat") openMainDd(matchCat(p.catQ),"cat");
+  else closeMainDd();
+  updateSimilar(p.noun);
+  updatePreview(p);
+}
+
+/* ═══════════════════════════════════════
+   추가 — DB 저장 완료 후 id를 uuid로 교체
+═══════════════════════════════════════ */
+async function commitAdd(){
+  const raw=document.getElementById("mainInput").value;
+  const p=parse(raw); const verbObj=resolveVerb(p.verbQ);
+  if(!p.noun||!verbObj) return;
+  const catObj=resolveCat(p.catQ)||CATS.find(c=>c.key===VERB_DEFAULT_CAT[verbObj.name]);
+  const token=verbObj.name+"-"+p.noun;
+  if(tokens.find(t=>t.token===token)){ setStatus("이미 있는 항목: "+token,true); return; }
+
+  // 임시 로컬 id로 먼저 추가 (UX)
+  const tmpId="tmp-"+Date.now();
+  const item={id:tmpId,dbId:null,noun:p.noun,verb:verbObj.name,token,cat:catObj,checked:false};
+  tokens.unshift(item);
+
+  // 입력창 초기화
+  document.getElementById("mainInput").value="";
+  closeMainDd();
+  document.getElementById("simWrap").classList.remove("open");
+  document.getElementById("previewToken").textContent="명사 ` 동사 입력 후 미리보기";
+  document.getElementById("previewToken").className="preview-token empty";
+  document.getElementById("previewRow").querySelectorAll(".pill").forEach(e=>e.remove());
+  document.getElementById("addBtn").disabled=true;
+  renderList();
+  setStatus("저장 중...");
+
+  // DB 저장 → uuid로 id 교체
+  const dbId=await saveToDB(item);
+  if(dbId){
+    item.id=dbId; item.dbId=dbId;
+    setStatus("저장됨 ✓");
+    renderList(); // uuid로 다시 렌더 → 클릭 즉시 작동
+  }
+}
+
+/* ═══════════════════════════════════════
+   인라인 수정 — 메인 입력과 동일한 형식
+   수정창: 명사`동사`카테고리
+═══════════════════════════════════════ */
+function startEdit(id){
+  if(editingId===id) return;
+  editingId=id; _currentEditId=id;
+  closeAllCatPopups();
+  renderList();
+  requestAnimationFrame(()=>{
+    const inp=document.getElementById("editInput-"+id);
+    if(inp){ inp.focus(); const len=inp.value.length; inp.setSelectionRange(len,len); }
+  });
+}
+function cancelEdit(){ editingId=null; _currentEditId=null; editDdItems=[]; editDdFocus=-1; renderList(); }
+
+function onEditInput(id){
+  _currentEditId=id;
+  const inp=document.getElementById("editInput-"+id); if(!inp) return;
+  const p=parseEdit(inp.value);
+  const el=getEditDdEl(id); if(!el) return;
+  if(p.mode==="verb"){
+    const matches=matchVerb(p.verbQ);
+    editDdItems=matches; editDdFocus=-1;
+    if(matches.length) renderDdItems(el,matches,"edit-verb",`pickEditDd`);
+    else closeDd(el);
+  } else if(p.mode==="cat"){
+    const matches=matchCat(p.catQ);
+    editDdItems=matches; editDdFocus=-1;
+    if(matches.length) renderDdItems(el,matches,"cat",`pickEditDdCat`);
+    else closeDd(el);
+  } else {
+    closeDd(el); editDdItems=[];
+  }
+}
+
+function pickEditDdCat(i){
+  const id=_currentEditId; if(!id) return;
+  const inp=document.getElementById("editInput-"+id); if(!inp) return;
+  const p=parseEdit(inp.value);
+  inp.value=p.noun+"`"+(resolveVerb(p.verbQ)?.name||p.verbQ||"")+"`"+editDdItems[i].name;
+  const el=getEditDdEl(id); if(el) closeDd(el);
+  editDdItems=[]; editDdFocus=-1;
+  inp.focus();
+}
+
+function onEditKey(e,id){
+  _currentEditId=id;
+  const el=getEditDdEl(id);
+  if(el&&el.classList.contains("open")){
+    if(e.key==="ArrowDown"){e.preventDefault(); editDdFocus=focusDdEl(el,editDdItems,1,editDdFocus);}
+    else if(e.key==="ArrowUp"){e.preventDefault(); editDdFocus=focusDdEl(el,editDdItems,-1,editDdFocus);}
+    else if(e.key==="Tab"||e.key==="Enter"){
+      e.preventDefault();
+      const p=parseEdit(document.getElementById("editInput-"+id)?.value||"");
+      const isCat=(p.mode==="cat");
+      if(editDdFocus>=0) isCat?pickEditDdCat(editDdFocus):pickEditDd(editDdFocus);
+      else if(editDdItems.length>0) isCat?pickEditDdCat(0):pickEditDd(0);
+      if(e.key==="Enter"){ closeDd(el); setTimeout(()=>saveEdit(id),30); }
+    }
+    else if(e.key==="Escape"){ closeDd(el); editDdItems=[]; }
+  } else {
+    if(e.key==="Enter"){e.preventDefault(); saveEdit(id);}
+    else if(e.key==="Escape") cancelEdit();
+  }
+}
+
+async function saveEdit(id){
+  const inp=document.getElementById("editInput-"+id); if(!inp) return;
+  const p=parseEdit(inp.value.trim());
+  // 수정창 형식: 명사`동사`카테고리 (메인과 동일)
+  const verbObj=resolveVerb(p.verbQ);
+  if(!p.noun||!verbObj){ setStatus("형식: 명사`동사  예) 과제`하기",true); return; }
+  const catObj=resolveCat(p.catQ)||CATS.find(c=>c.key===VERB_DEFAULT_CAT[verbObj.name]);
+  const newToken=verbObj.name+"-"+p.noun;
+  const item=tokens.find(t=>t.id===id); if(!item) return;
+  if(newToken!==item.token&&tokens.find(t=>t.token===newToken)){ setStatus("이미 있는 항목: "+newToken,true); return; }
+  item.noun=p.noun; item.verb=verbObj.name; item.token=newToken; item.cat=catObj;
+  await updateInDB(item.dbId,{noun:p.noun,verb:verbObj.name,token:newToken,category:catObj.name,category_key:catObj.key});
+  setStatus("수정됨 ✓"); editingId=null; _currentEditId=null; renderList();
+}
+
+/* ═══════════════════════════════════════
+   카테고리 팝업
+═══════════════════════════════════════ */
+function closeAllCatPopups(){
+  document.querySelectorAll(".cat-popup.open").forEach(p=>p.classList.remove("open"));
+  openCatPopupId=null;
+}
+function toggleCatPopup(id,e){
+  e.stopPropagation();
+  if(openCatPopupId===id){ closeAllCatPopups(); return; }
+  closeAllCatPopups();
+  openCatPopupId=id;
+  const btn=document.querySelector(`.t-pill-btn[data-id="${id}"]`); if(!btn) return;
+  let popup=btn.querySelector(".cat-popup");
+  if(!popup){
+    popup=document.createElement("div"); popup.className="cat-popup";
+    popup.innerHTML=CATS.map(c=>`
+      <div class="cat-popup-item" onmousedown="setCat('${id}','${c.key}')">
+        <span class="pill ${c.cls}" style="font-size:11px;padding:2px 7px;pointer-events:none">${c.name}</span>
+      </div>`).join("");
+    btn.appendChild(popup);
+  }
+  popup.classList.add("open");
+}
+async function setCat(id,catKey){
+  const item=tokens.find(t=>t.id===id); if(!item) return;
+  const catObj=CATS.find(c=>c.key===catKey); if(!catObj) return;
+  item.cat=catObj;
+  await updateInDB(item.dbId,{category:catObj.name,category_key:catObj.key});
+  closeAllCatPopups(); setStatus("카테고리 변경됨 ✓"); renderList();
+}
+
+/* ═══════════════════════════════════════
+   체크
+═══════════════════════════════════════ */
+async function toggleCheck(id){
+  const item=tokens.find(t=>t.id===id); if(!item) return;
+  item.checked=!item.checked;
+  await updateInDB(item.dbId,{checked:item.checked});
+  renderList();
+}
+
+/* ═══════════════════════════════════════
+   삭제
+═══════════════════════════════════════ */
+async function deleteToken(id){
+  const item=tokens.find(t=>t.id===id); if(!item) return;
+  await deleteFromDB(item.dbId);
+  tokens=tokens.filter(t=>t.id!==id);
+  if(editingId===id){ editingId=null; _currentEditId=null; }
+  renderList();
+}
+
+/* ═══════════════════════════════════════
+   필터 & 목록 렌더
+═══════════════════════════════════════ */
+function setFilter(f){ activeFilter=f; renderFilterArea(); renderList(); }
+function setVerbFilter(v){ activeVerbFilter=v; renderFilterArea(); renderList(); }
+
+function renderFilterArea(){
+  const area=document.getElementById("filterArea");
+  // 카테고리 필터
+  const catBtns=
+    `<button class="f-btn${activeFilter==="전체"?" active":""}" onclick="setFilter('전체')" data-f="전체">전체</button>`+
+    CATS.map(c=>`<button class="f-btn${activeFilter===c.name?" active":""}" onclick="setFilter('${c.name}')">${c.name}</button>`).join("")+
+    `<button class="f-btn${activeFilter==="체크"?" active":""}" onclick="setFilter('체크')">⊙ 체크</button>`;
+
+  // 동사 필터
+  const verbList=allVerbs();
+  const verbBtns=
+    `<button class="f-btn${activeVerbFilter==="전체"?" active":""}" onclick="setVerbFilter('전체')">전체</button>`+
+    verbList.map(v=>`<button class="f-btn${activeVerbFilter===v.name?" active":""}" onclick="setVerbFilter('${v.name}')">${v.name}</button>`).join("");
+
+  area.innerHTML=
+    `<div class="filter-group-label">카테고리</div><div class="filter-row">${catBtns}</div>`+
+    `<div class="filter-group-label" style="margin-top:8px">동사</div><div class="filter-row" style="margin-bottom:12px">${verbBtns}</div>`;
+}
+
+function renderList(){
+  let filtered=tokens;
+  if(activeFilter==="체크") filtered=filtered.filter(t=>t.checked);
+  else if(activeFilter!=="전체") filtered=filtered.filter(t=>t.cat.name===activeFilter);
+  if(activeVerbFilter!=="전체") filtered=filtered.filter(t=>t.verb===activeVerbFilter);
+
+  document.getElementById("cnt").textContent=tokens.length;
+  const chk=tokens.filter(t=>t.checked).length;
+  const cc=document.getElementById("checkCnt"); if(cc) cc.textContent=chk;
+  const list=document.getElementById("tokenList");
+  if(!filtered.length){ list.innerHTML='<div class="empty">항목이 없습니다</div>'; return; }
+
+  list.innerHTML=filtered.map(t=>{
+    const qid=`'${t.id}'`;
+    if(editingId===t.id){
+      return `<div class="t-row editing" data-id="${t.id}">
+        <div class="edit-input-wrap">
+          <input class="edit-input" id="editInput-${t.id}"
+            value="${t.noun}\`${t.verb}"
+            autocomplete="off" spellcheck="false"
+            oninput="onEditInput('${t.id}')"
+            onkeydown="onEditKey(event,'${t.id}')" />
+          <div class="dd-wrap" id="editDd-${t.id}"></div>
+        </div>
+        <div class="edit-hint">형식: 명사\`동사\`카테고리 (카테고리 생략 가능)</div>
+        <div class="edit-actions">
+          <button class="edit-save" onclick="saveEdit('${t.id}')">저장 (Enter)</button>
+          <button class="edit-cancel" onclick="cancelEdit()">취소 (Esc)</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="t-row${t.checked?" is-checked":""}" data-id="${t.id}">
+      <input type="checkbox" class="t-check" ${t.checked?"checked":""} onchange="toggleCheck(${qid})" title="오늘·곧 할 일로 체크" />
+      <span class="${t.checked?"t-checked-tok":"t-tok"}" onclick="startEdit(${qid})" title="클릭하여 수정">${t.token}</span>
+      <button class="t-pill-btn" data-id="${t.id}" onclick="toggleCatPopup(${qid},event)" title="카테고리 변경">
+        <span class="pill ${t.cat.cls}">${t.cat.name}</span>
+      </button>
+      <button class="t-del" onclick="deleteToken(${qid})">✕</button>
+    </div>`;
+  }).join("");
+}
+
+/* ═══════════════════════════════════════
+   참조 패널
+═══════════════════════════════════════ */
+function renderRef(){
+  document.getElementById("verbRefGroups").innerHTML=VERB_GROUPS.map(g=>`
+    <div class="ref-group">
+      <div class="ref-group-name">${g.group}</div>
+      <div class="chips">${g.verbs.map(v=>`
+        <button class="v-chip" onclick="insertVerb('${v.name}')" title="${v.desc}">
+          ${v.name}<span class="al">${v.aliases.slice(0,3).join("·")}</span>
+        </button>`).join("")}
+      </div>
+    </div>`).join("");
+
+  document.getElementById("catChips").innerHTML=CATS.map(c=>`
+    <button class="v-chip" onclick="insertCat('${c.name}')" title="${c.desc}">
+      <span class="pill ${c.cls}" style="font-size:11px;padding:2px 7px;pointer-events:none">${c.name}</span>
+    </button>`).join("");
+}
+function insertVerb(name){
+  const inp=document.getElementById("mainInput"); const p=parse(inp.value);
+  inp.value=(p.noun||"")+"`"+name; closeMainDd(); onInput(); inp.focus();
+}
+function insertCat(name){
+  const inp=document.getElementById("mainInput"); const p=parse(inp.value);
+  if(!p.noun) return;
+  inp.value=p.noun+"`"+(resolveVerb(p.verbQ)?.name||p.verbQ||"")+"`"+name;
+  closeMainDd(); onInput(); inp.focus();
+}
+
+/* ═══════════════════════════════════════
+   키보드 — 메인 입력
+═══════════════════════════════════════ */
+document.getElementById("mainInput").addEventListener("input",onInput);
+document.getElementById("mainInput").addEventListener("keydown",e=>{
+  const dd=document.getElementById("mainDd");
+  if(dd.classList.contains("open")){
+    if(e.key==="ArrowDown"){e.preventDefault(); mainDdFocus=focusDdEl(dd,mainDdItems,1,mainDdFocus);}
+    else if(e.key==="ArrowUp"){e.preventDefault(); mainDdFocus=focusDdEl(dd,mainDdItems,-1,mainDdFocus);}
+    else if(e.key==="Tab"||e.key==="Enter"){
+      e.preventDefault();
+      if(mainDdFocus>=0) pickMainDd(mainDdFocus); else if(mainDdItems.length>0) pickMainDd(0);
+      if(e.key==="Enter"){ closeMainDd(); setTimeout(()=>{ if(!document.getElementById("addBtn").disabled) commitAdd(); },50); }
+    }
+    else if(e.key==="Escape") closeMainDd();
+  } else {
+    if(e.key==="Enter"){ e.preventDefault(); if(!document.getElementById("addBtn").disabled) commitAdd(); }
+  }
+});
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".input-wrap")) closeMainDd();
+  if(!e.target.closest(".t-pill-btn")) closeAllCatPopups();
+});
+
+/* ── init ── */
+renderRef();
+renderFilterArea();
+renderList();
+</script>
+</body>
+</html>
