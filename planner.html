@@ -366,33 +366,20 @@ function rVerb(q){
 /* ══ 초기화 ══ */
 // ── 인증 ──
 let currentUser=null;
-let _loaded=false;
 
 async function checkAuth(){
   const{data:{session}}=await sb.auth.getSession();
   if(session?.user){
     currentUser=session.user;
-    if(!_loaded||_loaded!==session.user.id){
-      _loaded=session.user.id;
-      await init();
-    }
+    await init();
   } else {
-    // 로그인 안 됐으면 index로
     window.location.href='/index.html';
   }
+  // 이후 로그아웃 감지
+  sb.auth.onAuthStateChange((event)=>{
+    if(event==='SIGNED_OUT') window.location.href='/index.html';
+  });
 }
-
-sb.auth.onAuthStateChange(async(event,session)=>{
-  if(session?.user){
-    currentUser=session.user;
-    if(!_loaded||_loaded!==session.user.id){
-      _loaded=session.user.id;
-      if(event!=='INITIAL_SESSION') await init();
-    }
-  } else if(event==='SIGNED_OUT'){
-    window.location.href='/index.html';
-  }
-});
 
 async function init(){
   if(!sb)return;
