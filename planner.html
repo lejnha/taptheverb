@@ -298,7 +298,9 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:var(--bg);
 /* ══ Supabase ══ */
 const SB_URL="https://aqcdfnhzbrwqshyqvixb.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxY2Rmbmh6YnJ3cXNoeXF2aXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjkwNjcsImV4cCI6MjA4OTMwNTA2N30.-v4_czoeiinthnnqbFKj37ajE8lIJfiwkn-F220RxhE";
-let sb; try{sb=supabase.createClient(SB_URL,SB_KEY);}catch(e){}
+let sb; try{sb=supabase.createClient(SB_URL,SB_KEY,{
+  auth:{detectSessionInUrl:true,persistSession:true,storageKey:'taptheverb-auth'}
+});}catch(e){}
 
 /* ══ 상태 ══ */
 const TODAY=new Date().toISOString().slice(0,10);
@@ -362,6 +364,36 @@ function rVerb(q){
 })();
 
 /* ══ 초기화 ══ */
+// ── 인증 ──
+let currentUser=null;
+let _loaded=false;
+
+async function checkAuth(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(session?.user){
+    currentUser=session.user;
+    if(!_loaded||_loaded!==session.user.id){
+      _loaded=session.user.id;
+      await init();
+    }
+  } else {
+    // 로그인 안 됐으면 index로
+    window.location.href='/index.html';
+  }
+}
+
+sb.auth.onAuthStateChange(async(event,session)=>{
+  if(session?.user){
+    currentUser=session.user;
+    if(!_loaded||_loaded!==session.user.id){
+      _loaded=session.user.id;
+      if(event!=='INITIAL_SESSION') await init();
+    }
+  } else if(event==='SIGNED_OUT'){
+    window.location.href='/index.html';
+  }
+});
+
 async function init(){
   if(!sb)return;
   setDot("saving");
@@ -450,7 +482,7 @@ async function addAlways(tok){
   if(alwaysItems.find(i=>i.token===tok)) return; // 중복 방지
   if(!sb) return;
   setDot("saving");
-  const{data,error}=await sb.from("planner_always").insert({token:tok}).select().single();
+  const{data,error}=await sb.from("planner_always").insert({token:tok,user_id:currentUser?.id}).select().single();
   if(error){setDot("err");return;}
   alwaysItems.push({id:String(data.id),token:tok});
   setDot("saved");
@@ -849,7 +881,7 @@ function scrollToNow(){
   if(r)r.scrollIntoView({behavior:"smooth",block:"center"});
 }
 
-init();
+checkAuth();
 setInterval(updateNow,60000);
 setTimeout(scrollToNow,700);
 window.addEventListener("resize",buildTable);
