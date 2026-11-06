@@ -215,7 +215,7 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:var(--bg);
     <!-- 입력창 -->
     <div class="input-wrap">
       <input class="main-input" id="mainInput"
-        placeholder="명사`동사  →  Enter  (예: 발난로`사기)"
+        placeholder="명사`동사 (예: 발난로`사기 또는 노트북 lm`사용하기)"
         autocomplete="off" spellcheck="false"/>
       <div class="dd-wrap" id="mainDd"></div>
     </div>
@@ -390,7 +390,7 @@ function setStatus(msg,isErr=false){
   if(!isErr)setTimeout(()=>{if(el.textContent===msg)el.textContent="";},3000);
 }
 
-/* ══════════════ DB 연동 ══════════════ */
+/* ══════════════ DB 연동 (category 완전 제거) ══════════════ */
 async function loadFromDB(){
   if(!sb||!currentUser)return;
   setStatus("로드 중...");
@@ -408,11 +408,17 @@ async function loadFromDB(){
 async function saveToDB(item){
   if(!sb||!currentUser)return null;
   const{data,error}=await sb.from("items").insert({
-    noun:item.noun,verb:item.verb,token:item.token,
-    category:"일반",category_key:"general",checked:false,
+    noun:item.noun,
+    verb:item.verb,
+    token:item.token,
+    checked:false,
     user_id:currentUser.id,
   }).select().single();
-  if(error){setStatus("저장 실패: "+error.message,true);return null;}
+  if(error){
+    console.error("DB 저장 오류:", error);
+    setStatus("저장 실패: "+error.message,true);
+    return null;
+  }
   return String(data.id);
 }
 
@@ -427,15 +433,56 @@ async function deleteFromDB(dbId){
   await sb.from("items").delete().eq("id",dbId);
 }
 
-/* ══════════════ 파싱 & 헬퍼 ══════════════ */
-function parse(raw){
-  const f=raw.indexOf("`");
-  if(f===-1)return{noun:raw.trim(),vq:"",mode:"noun"};
-  return{noun:raw.slice(0,f).trim(),vq:raw.slice(f+1).trim(),mode:"verb"};
-}
+/* ══════════════ 파싱 & 헬퍼 (양방향 순서 완벽 지원) ══════════════ */
 const av=()=>VERB_GROUPS.flatMap(g=>g.verbs);
 function mV(q){if(!q)return av();const lq=q.toLowerCase();return av().filter(v=>v.name.startsWith(lq)||v.aliases.some(a=>a.startsWith(lq))||v.name.includes(lq));}
 function rV(q){if(!q)return null;const e=av().find(v=>v.name===q);if(e)return e;const m=mV(q);return m.length===1?m[0]:null;}
+
+function parse(raw){
+  const clean = raw.trim();
+  const f = clean.indexOf("`");
+  
+  // 1) 백틱(`)이 아예 없는 경우: 맨 앞이나 맨 뒤 단어가 동사인지 공백 단위로 스마트 체크
+  if(f === -1){
+    const parts = clean.split(/\s+/);
+    if(parts.length >= 2){
+      // 맨 앞 단어가 동사인 경우: "사용하기 노트북 lm"
+      const firstV = rV(parts[0]);
+      if(firstV){
+        return {noun: parts.slice(1).join(" "), vq: firstV.name, mode: "verb"};
+      }
+      // 맨 뒤 단어가 동사인 경우: "노트북 lm 사용하기"
+      const lastV = rV(parts[parts.length - 1]);
+      if(lastV){
+        return {noun: parts.slice(0, -1).join(" "), vq: lastV.name, mode: "verb"};
+      }
+    }
+    return {noun: clean, vq: "", mode: "noun"};
+  }
+
+  // 2) 백틱(`)이 있는 경우
+  const part1 = clean.slice(0, f).trim();
+  const part2 = clean.slice(f + 1).trim();
+
+  // 첫 번째가 비어있고 백틱 뒤에 시작한 경우: "`사용하기 노트북 lm"
+  if(!part1 && part2){
+    const subParts = part2.split(/\s+/);
+    const vMatch = rV(subParts[0]);
+    if(vMatch){
+      return {noun: subParts.slice(1).join(" "), vq: vMatch.name, mode: "verb"};
+    }
+    return {noun: "", vq: part2, mode: "verb"};
+  }
+
+  // 첫 번째가 동사인 경우: "사용하기`노트북 lm"
+  const v1 = rV(part1);
+  if(v1 && !rV(part2)){
+    return {noun: part2, vq: v1.name, mode: "verb"};
+  }
+
+  // 기본 형태: "노트북 lm`사용하기"
+  return {noun: part1, vq: part2, mode: "verb"};
+}
 
 function getVerbPillHtml(verbName){
   const vObj=rV(verbName);
@@ -457,8 +504,9 @@ function renderDD(el,items,pickFn){
 }
 function closeMainDd(){document.getElementById("mainDd").classList.remove("open");mainDdItems=[];mainDdFocus=-1;}
 function pickMainDd(i){
-  const inp=document.getElementById("mainInput");const p=parse(inp.value);
-  inp.value=p.noun+"`"+mainDdItems[i].name;
+  const inp=document.getElementById("mainInput");
+  const p=parse(inp.value);
+  inp.value=(p.noun?p.noun+"`":"")+mainDdItems[i].name;
   closeMainDd();onInput();inp.focus();
 }
 function focusMainDd(dir){
@@ -508,27 +556,36 @@ function updatePreview(p){
 function onInput(){
   const raw=document.getElementById("mainInput").value;
   const p=parse(raw);
-  if(p.mode==="verb"){mainDdItems=mV(p.vq);mainDdFocus=-1;renderDD(document.getElementById("mainDd"),mainDdItems,"pickMainDd");}
-  else closeMainDd();
-  updateSimilar(p.noun);updatePreview(p);
+  if(p.mode==="verb" && !rV(p.vq)){
+    mainDdItems=mV(p.vq);
+    mainDdFocus=-1;
+    renderDD(document.getElementById("mainDd"),mainDdItems,"pickMainDd");
+  } else {
+    closeMainDd();
+  }
+  updateSimilar(p.noun);
+  updatePreview(p);
 }
 
 /* ══════════════ 추가 / 수정 / 삭제 ══════════════ */
 async function commitAdd(){
   const raw=document.getElementById("mainInput").value;
-  const p=parse(raw);const vObj=rV(p.vq);
+  const p=parse(raw);
+  const vObj=rV(p.vq);
   if(!p.noun||!vObj)return;
   const token=vObj.name+"-"+p.noun;
   if(tokens.find(t=>t.token===token)){setStatus("이미 있는 항목: "+token,true);return;}
   const item={noun:p.noun,verb:vObj.name,token,checked:false,id:"tmp-"+Date.now()};
   tokens.unshift(item);
-  document.getElementById("mainInput").value="";closeMainDd();
+  document.getElementById("mainInput").value="";
+  closeMainDd();
   document.getElementById("simWrap").classList.remove("open");
   document.getElementById("previewNoun").textContent="명사 ` 동사 입력 후 미리보기";
   document.getElementById("previewNoun").className="preview-noun empty";
   document.getElementById("previewPillWrap").innerHTML="";
   document.getElementById("addBtn").disabled=true;
-  setStatus("저장 중...");renderList();
+  setStatus("저장 중...");
+  renderList();
   const dbId=await saveToDB(item);
   if(dbId){item.id=dbId;item.dbId=dbId;setStatus("저장됨 ✓");renderList();}
 }
@@ -567,21 +624,7 @@ function renderFilterArea(){
   const area=document.getElementById("filterArea");
   const btns=`<button class="f-btn${activeFilter==="전체"?" active":""}" onclick="setFilter('전체')">전체</button>`+
     `<button class="f-btn${activeFilter==="체크"?" active":""}" onclick="setFilter('체크')">⊙ 오늘/곧 할 일</button>`+
-    av().map(v=>`<button class="f-btn${activeFilter===v.name?" active":""}" onclick="setFilter('${v.name}')">${v.name}</button>`).join("");
-  area.innerHTML=btns;
-}
-
-function renderList(){
-  let filtered=tokens;
-  if(activeFilter==="체크")filtered=filtered.filter(t=>t.checked);
-  else if(activeFilter!=="전체")filtered=filtered.filter(t=>t.verb===activeFilter);
-  document.getElementById("cnt").textContent=tokens.length;
-  const chk=tokens.filter(t=>t.checked).length;
-  document.getElementById("checkCnt").textContent=chk;
-  const list=document.getElementById("tokenList");
-  if(!filtered.length){list.innerHTML='<div class="empty">항목이 없습니다</div>';return;}
-  list.innerHTML=filtered.map(t=>{
-    const qid=`'${t.id}'`;
+    av().map(v=>`<button class="f-btn${activeFilter===v.name?" active":""}" onclick="setFilter('${v.name}')">${v.name}</button>`).join(""); area.innerHTML=btns; }  function renderList(){ let filtered=tokens; if(activeFilter==="체크")filtered=filtered.filter(t=>t.checked); else if(activeFilter!=="전체")filtered=filtered.filter(t=>t.verb===activeFilter); document.getElementById("cnt").textContent=tokens.length; const chk=tokens.filter(t=>t.checked).length; document.getElementById("checkCnt").textContent=chk; const list=document.getElementById("tokenList"); if(!filtered.length){list.innerHTML='<div class="empty">항목이 없습니다</div>';return;} list.innerHTML=filtered.map(t=>{ const qid=`'${t.id}'`;
     if(editingId===t.id)return`<div class="t-row editing" data-id="${t.id}">
       <input class="edit-input" id="editInput-${t.id}" value="${t.noun}\`${t.verb}" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')saveEdit(${qid});else if(event.key==='Escape')cancelEdit();"/>
       <div class="edit-hint">수정 후 Enter 저장 · Esc 취소</div>
